@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <title>VideoUploader Pro - Upload Your Content</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f2f5;
+        }
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+        .main-content {
+            flex: 1;
+            padding: 20px;
+        }
+        .upload-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+        .upload-section {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .upload-box {
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            width: 100%;
+            max-width: 400px;
+        }
+        .upload-box:hover {
+            background-color: #f9f9f9;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        .file-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .submit-btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            display: block;
+            width: 100%;
+            margin-top: 20px;
+        }
+        .submit-btn:hover {
+            background-color: #45a049;
+        }
+        .preview {
+            margin-top: 10px;
+        }
+        .preview img, .preview video {
+            max-width: 100%;
+            height: auto;
+        }
+        .add-video-btn {
+            background-color: #008CBA;
+            color: white;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .add-video-btn:hover {
+            background-color: #007bb5;
+        }
+        .remove-video-btn {
+            background-color: #f44336;
+            color: white;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .remove-video-btn:hover {
+            background-color: #da190b;
+        }
+        .progress-container {
+            display: none;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .progress-bar {
+            width: 0;
+            height: 20px;
+            background-color: #4CAF50;
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        .loader {
+            border: 16px solid #f3f3f3;
+            border-top: 16px solid #3498db;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 2s linear infinite;
+            display: none;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="upload-container">
+        <h1>Upload Your Video</h1>
+        <form id="upload-form" action="{% url 'video_upload' %}" method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div id="video-sections">
+                <div class="upload-section">
+                    <label for="thumbnail-upload-1" class="upload-box">
+                        <span>Click to upload thumbnail</span>
+                        <input type="file" id="thumbnail-upload-1" name="thumbnail" accept="image/*">
+                    </label>
+                    <div id="thumbnail-info-1" class="file-info"></div>
+                    <div class="preview" id="thumbnail-preview-1"></div>
+
+                    <label for="video-upload-1" class="upload-box">
+                        <span>Click to upload video</span>
+                        <input type="file" id="video-upload-1" name="video" accept="video/*">
+                    </label>
+                    <div id="video-info-1" class="file-info"></div>
+                    <div class="preview" id="video-preview-1"></div>
+                    <button type="button" class="remove-video-btn" onclick="removeVideoSection(1)">Remove Video</button>
+                </div>
+            </div>
+            <button type="button" class="add-video-btn" onclick="addVideoSection()">Add Another Video</button>
+            <input type="text" id="title" name="title" placeholder="Enter video title" required>
+            <textarea id="description" name="description" placeholder="Enter video description"></textarea>
+
+            <button type="submit" class="submit-btn">Upload Video</button>
+        </form>
+        <div class="progress-container" id="progress-container">
+            <div class="progress-bar" id="progress-bar"></div>
+            <div class="loader" id="loader"></div>
+        </div>
+    </div>
+
+    <script>
+        let videoCount = 1;
+
+        function addVideoSection() {
+            videoCount++;
+            const videoSections = document.getElementById('video-sections');
+            const newSection = document.createElement('div');
+            newSection.classList.add('upload-section');
+            newSection.innerHTML = `
+                <label for="thumbnail-upload-${videoCount}" class="upload-box">
+                    <span>Click to upload thumbnail</span>
+                    <input type="file" id="thumbnail-upload-${videoCount}" name="thumbnail" accept="image/*">
+                </label>
+                <div id="thumbnail-info-${videoCount}" class="file-info"></div>
+                <div class="preview" id="thumbnail-preview-${videoCount}"></div>
+
+                <label for="video-upload-${videoCount}" class="upload-box">
+                    <span>Click to upload video</span>
+                    <input type="file" id="video-upload-${videoCount}" name="video" accept="video/*">
+                </label>
+                <div id="video-info-${videoCount}" class="file-info"></div>
+                <div class="preview" id="video-preview-${videoCount}"></div>
+                <button type="button" class="remove-video-btn" onclick="removeVideoSection(${videoCount})">Remove Video</button>
+            `;
+
+            videoSections.appendChild(newSection);
+
+            document.getElementById(`thumbnail-upload-${videoCount}`).addEventListener('change', function(e) {
+                handleFileChange(e, `thumbnail-info-${videoCount}`, `thumbnail-preview-${videoCount}`);
+            });
+
+            document.getElementById(`video-upload-${videoCount}`).addEventListener('change', function(e) {
+                handleFileChange(e, `video-info-${videoCount}`, `video-preview-${videoCount}`);
+            });
+        }
+
+        function removeVideoSection(count) {
+            const videoSection = document.getElementById(`thumbnail-upload-${count}`).closest('.upload-section');
+            videoSection.remove();
+        }
+
+        function handleFileChange(e, infoId, previewId) {
+            var file = e.target.files[0];
+            document.getElementById(infoId).textContent = file ? file.name : '';
+
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var element = file.type.startsWith('image') ? document.createElement('img') : document.createElement('video');
+                element.src = e.target.result;
+                if (element.tagName === 'VIDEO') {
+                    element.controls = true;
+                }
+                document.getElementById(previewId).innerHTML = '';
+                document.getElementById(previewId).appendChild(element);
+            }
+            reader.readAsDataURL(file);
+        }
+
+        document.getElementById('upload-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            var formData = new FormData(document.getElementById('upload-form'));
+            var xhr = new XMLHttpRequest();
+
+            xhr.open('POST', "{% url 'video_upload' %}", true);
+
+            xhr.upload.addEventListener('progress', function(e) {
+                if (e.lengthComputable) {
+                    var percentComplete = (e.loaded / e.total) * 100;
+                    document.getElementById('progress-container').style.display = 'block';
+                    document.getElementById('progress-bar').style.width = percentComplete + '%';
+                }
+            });
+
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    alert('Video uploaded successfully!');
+                    document.getElementById('progress-container').style.display = 'none';
+                    document.getElementById('progress-bar').style.width = '0';
+                } else {
+                    alert('Video upload failed.');
+                    document.getElementById('progress-container').style.display = 'none';
+                    document.getElementById('progress-bar').style.width = '0';
+                }
+            };
+
+            xhr.onerror = function() {
+                alert('An error occurred while uploading the video.');
+                document.getElementById('progress-container').style.display = 'none';
+                document.getElementById('progress-bar').style.width = '0';
+            };
+
+            xhr.send(formData);
+
+            document.getElementById('loader').style.display = 'block';
+        });
+
+        document.querySelectorAll('input[type="file"]').forEach(input => {
+            input.addEventListener('change', function(e) {
+                handleFileChange(e, `${input.id}-info`, `${input.id}-preview`);
+            });
+        });
+    </script>
+</body>
+</html>
