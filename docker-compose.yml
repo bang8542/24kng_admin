@@ -3,7 +3,7 @@ services:
   web:
     build:
       context: .
-    image: lsm12345/projectadminpage_ndb:latest
+    image: lsm12345/projectadminpage:latest
     volumes:
       - .:/app
     expose:
