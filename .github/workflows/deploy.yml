@@ -1,0 +1,222 @@
+name: CI and Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and push Docker image
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}
+      run: |
+        docker build -t $DOCKER_USERNAME/$DOCKER_IMAGE_NAME .
+        docker push $DOCKER_USERNAME/$DOCKER_IMAGE_NAME
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_S3_REGION_NAME }}
+
+    - name: Get EC2 Public IP by instance name
+      id: get-ec2-ip
+      run: |
+        EC2_IP=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=admin-test" "Name=instance-state-name,Values=running" \
+          --query "Reservations[].Instances[].PublicIpAddress" \
+          --output text)
+        echo "EC2_PUBLIC_IP=${EC2_IP}" >> $GITHUB_ENV
+        echo "EC2 Public IP: ${EC2_IP}"
+
+    - name: Debug - Display IP address
+      run: 'echo "Using IP address: ${{ env.EC2_PUBLIC_IP }}"'
+
+    - name: Get CloudFront Domain Name
+      id: get-cloudfront
+      run: |
+        distribution_id=$(aws cloudfront list-distributions --query 'DistributionList.Items[0].Id' --output text)
+        cloudfront_domain=$(aws cloudfront get-distribution --id $distribution_id --query 'Distribution.DomainName' --output text)
+        echo "CLOUDFRONT_DOMAIN=${cloudfront_domain}" >> $GITHUB_ENV
+        echo "CloudFront Domain: ${cloudfront_domain}"
+
+    - name: Debug Secrets
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+        echo "AWS_STORAGE_BUCKET_NAME=${{ secrets.AWS_STORAGE_BUCKET_NAME }}"
+        echo "AWS_THUMBNAIL_BUCKET_NAME=${{ secrets.AWS_THUMBNAIL_BUCKET_NAME }}"
+        echo "AWS_S3_REGION_NAME=${{ secrets.AWS_S3_REGION_NAME }}"
+        echo "ALLOWED_HOSTS=${{ env.EC2_PUBLIC_IP }}"
+        echo "DB_NAME=${{ secrets.DB_NAME }}"
+        echo "DB_USER=${{ secrets.DB_USER }}"
+        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
+        echo "DB_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }}"
+        echo "CLOUDFRONT_DOMAIN=${{ env.CLOUDFRONT_DOMAIN }}"
+        echo "EKS_DASHBOARD_URL=${{ secrets.EKS_DASHBOARD_URL }}"
+        echo "RDS_ENDPOINT=${{ env.RDS_ENDPOINT }}"
+
+    - name: Get RDS Endpoint
+      id: get-rds-endpoint
+      run: |
+        RDS_ENDPOINT=$(aws rds describe-db-instances \
+          --db-instance-identifier ${{ secrets.RDS_INSTANCE_NAME }} \
+          --query 'DBInstances[0].Endpoint.Address' \
+          --output text)
+        echo "RDS_ENDPOINT=${RDS_ENDPOINT}" >> $GITHUB_ENV
+        echo "RDS Endpoint: ${RDS_ENDPOINT}"
+  
+    - name: Create .env file
+      run: |
+        set -e
+        touch .env
+        echo "Touched .env file" >> debug.log
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+        echo "AWS_STORAGE_BUCKET_NAME=${{ secrets.AWS_STORAGE_BUCKET_NAME }}" >> .env
+        echo "AWS_THUMBNAIL_BUCKET_NAME=${{ secrets.AWS_THUMBNAIL_BUCKET_NAME }}" >> .env
+        echo "AWS_S3_REGION_NAME=${{ secrets.AWS_S3_REGION_NAME }}" >> .env
+        echo "ALLOWED_HOSTS=${{ env.EC2_PUBLIC_IP }}" >> .env
+        echo "AWS_CLOUDFRONT_URL=https://${{ env.CLOUDFRONT_DOMAIN }}/" >> .env
+        echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
+        echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+        echo "DB_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }}" >> .env
+        echo "EKS_DASHBOARD_URL=${{ secrets.EKS_DASHBOARD_URL }}" >> .env
+        echo "RDS_ENDPOINT=${{ env.RDS_ENDPOINT }}" >> .env
+        cat .env
+        cat debug.log
+        ls -al
+        echo "Finished creating .env file"
+
+    - name: Install Docker and AWS CLI on EC2
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        INSTANCE_PUBLIC_IP: ${{ env.EC2_PUBLIC_IP }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_S3_REGION_NAME: ${{ secrets.AWS_S3_REGION_NAME }}
+      run: |
+        set -x
+        if [ -z "$INSTANCE_PUBLIC_IP" ]; then
+          echo "Error: INSTANCE_PUBLIC_IP is empty"
+          exit 1
+        fi
+        
+        echo "Attempting to connect to $INSTANCE_PUBLIC_IP"
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        max_retries=5
+        retry_count=0
+        while [ $retry_count -lt $max_retries ]; do
+          if ssh-keyscan -v -H "$INSTANCE_PUBLIC_IP" >> ~/.ssh/known_hosts 2>&1; then
+            echo "ssh-keyscan successful"
+            break
+          else
+            echo "ssh-keyscan failed, retrying in 30 seconds..."
+            sleep 30
+            retry_count=$((retry_count+1))
+          fi
+        done
+        
+        if [ $retry_count -eq $max_retries ]; then
+          echo "Failed to connect after $max_retries attempts"
+          exit 1
+        fi
+        
+        ssh -v $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF 2>&1
+          set -ex
+          echo "Successfully connected to the instance"
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl unzip
+          echo "Basic packages installed"
+          sudo install -m 0755 -d /etc/apt/keyrings
+          sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+          sudo chmod a+r /etc/apt/keyrings/docker.asc
+          echo \
+            "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+            \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | \
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          echo "Docker installed"
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install
+          echo "AWS CLI installed"
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+          aws configure set region $AWS_S3_REGION_NAME
+          echo "AWS CLI configured"
+          echo "Installation and configuration completed successfully"
+        EOF
+
+    - name: Deploy to EC2
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        INSTANCE_PUBLIC_IP: ${{ env.EC2_PUBLIC_IP }}
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H $INSTANCE_PUBLIC_IP >> ~/.ssh/known_hosts
+
+        ls -al 
+
+        if [ -f .env ]; then
+          echo ".env file exists in the current directory."
+        else
+          echo ".env file does not exist in the current directory."
+          exit 1
+        fi
+
+        ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP 'mkdir -p ~/app'
+
+        scp .env $SSH_USERNAME@$INSTANCE_PUBLIC_IP:~/app/.env  
+
+        scp -r ./* $SSH_USERNAME@$INSTANCE_PUBLIC_IP:~/app
+
+        ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF
+          cd ~/app
+          ls -al
+          if [ -f .env ]; then
+            echo $(cat .env)
+          else
+            echo ".env file not found."
+          fi
+          sudo docker compose down
+          sudo docker compose up -d --build
+        EOF

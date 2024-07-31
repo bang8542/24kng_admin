@@ -1,0 +1,36 @@
+version: '3.7'
+services:
+  web:
+    build:
+      context: .
+    image: lsm12345/projectadminpage_ndb:latest
+    volumes:
+      - .:/app
+    expose:
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_STORAGE_BUCKET_NAME=${AWS_STORAGE_BUCKET_NAME}
+      - AWS_AWS_THUMBNAIL_BUCKET_NAME=${AWS_THUMBNAIL_BUCKET_NAME}
+      - AWS_S3_REGION_NAME=${AWS_S3_REGION_NAME}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - RDS_ENDPOINT=${RDS_ENDPOINT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - EKS_DASHBOARD_URL=${EKS_DASHBOARD_URL}
+    restart: always
+    command: >
+      sh -c "python manage.py migrate &&
+             gunicorn --bind 0.0.0.0:8000 myproject.wsgi:application"
+  nginx:
+    build: ./nginx
+    ports:
+      - "8888:80"
+    depends_on:
+      - web
+    volumes:
+      - .:/app

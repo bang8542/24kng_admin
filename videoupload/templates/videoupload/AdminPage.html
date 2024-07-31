@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    {% load static %}
+    <base href="{% static '' %}">
+    <title>VideoUploader Pro - 콘텐츠 업로드</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 250px;
+            background-color: #051e34;
+            color: #fff;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            background-color: #f0f2f5;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            box-sizing: border-box;
+        }
+        .nav-item {
+            margin: 10px 0;
+        }
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            display: block;
+            padding: 10px;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .nav-link.active, .nav-link:hover {
+            background-color: #444;
+        }
+        .nav-link {
+            min-height: 20px;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="user-info">
+                <span>Admin Page</span>
+            </div>
+            <div class="nav-item">
+                <a href="#" class="nav-link active" data-url="{% url 'video_upload' %}">비디오 업로드</a>
+            </div>
+            <div class="nav-item">
+                <a href="{{ dashboard_url }}" class="nav-link" target="_blank">대시보드</a>
+            </div>
+        </div>
+        <div class="main-content" id="main-content">
+            <!-- 동적 콘텐츠가 이곳에 로드됩니다 -->
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            // 페이지 로드 시 비디오 업로드 화면 로드
+            $('#main-content').load("{% url 'video_upload' %}");
+
+            $('.nav-link').on('click', function(e) {
+                var url = $(this).data('url');
+                if (url) {
+                    e.preventDefault();
+                    $('.nav-link').removeClass('active');
+                    $(this).addClass('active');
+                    $('#main-content').load(url);
+                }
+                // 대시보드 링크는 기본 동작 (새 창에서 열기)을 수행합니다.
+            });
+        });
+    </script>
+</body>
+</html>
