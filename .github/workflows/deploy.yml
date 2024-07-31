@@ -78,7 +78,6 @@ jobs:
         echo "DB_NAME=${{ secrets.DB_NAME }}"
         echo "DB_USER=${{ secrets.DB_USER }}"
         echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
-        echo "DB_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }}"
         echo "CLOUDFRONT_DOMAIN=${{ env.CLOUDFRONT_DOMAIN }}"
         echo "EKS_DASHBOARD_URL=${{ secrets.EKS_DASHBOARD_URL }}"
         echo "RDS_ENDPOINT=${{ env.RDS_ENDPOINT }}"
@@ -108,7 +107,6 @@ jobs:
         echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
         echo "DB_USER=${{ secrets.DB_USER }}" >> .env
         echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
-        echo "DB_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }}" >> .env
         echo "EKS_DASHBOARD_URL=${{ secrets.EKS_DASHBOARD_URL }}" >> .env
         echo "RDS_ENDPOINT=${{ env.RDS_ENDPOINT }}" >> .env
         cat .env
@@ -217,6 +215,18 @@ jobs:
           else
             echo ".env file not found."
           fi
+          # 데이터베이스 백업
+          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          BACKUP_FILE="db_backup_\${TIMESTAMP}.sql"
+          echo "Creating database backup: \${BACKUP_FILE}"
+          sudo docker compose exec -T db mysqldump -u\${DB_USER} -p\${DB_PASSWORD} \${DB_NAME} > \${BACKUP_FILE}
+          
           sudo docker compose down
           sudo docker compose up -d --build
+
+          # 마이그레이션 수행
+          echo "Running database migrations"
+          sudo docker compose exec -T web python manage.py makemigrations
+          sudo docker compose exec -T web python manage.py migrate
+        
         EOF
