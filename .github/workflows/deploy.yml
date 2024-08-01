@@ -50,7 +50,7 @@ jobs:
       id: get-ec2-ip
       run: |
         EC2_IP=$(aws ec2 describe-instances \
-          --filters "Name=tag:Name,Values=admin-test" "Name=instance-state-name,Values=running" \
+          --filters "Name=tag:Name,Values=Admin-test" "Name=instance-state-name,Values=running" \
           --query "Reservations[].Instances[].PublicIpAddress" \
           --output text)
         echo "EC2_PUBLIC_IP=${EC2_IP}" >> $GITHUB_ENV
@@ -177,6 +177,22 @@ jobs:
           aws configure set region $AWS_S3_REGION_NAME
           echo "AWS CLI configured"
           echo "Installation and configuration completed successfully"
+        EOF
+
+    - name: Create MySQL Database and User
+      env:
+        RDS_ENDPOINT: ${{ env.RDS_ENDPOINT }}
+        DB_ROOT_USERNAME: ${{ secrets.DB_ROOT_USERNAME }}
+        DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      run: |
+        mysql -h $RDS_ENDPOINT -P 3306 -u $DB_ROOT_USERNAME -p$DB_ROOT_PASSWORD <<EOF
+        CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+        CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';
+        GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';
+        FLUSH PRIVILEGES;
         EOF
 
     - name: Deploy to EC2
