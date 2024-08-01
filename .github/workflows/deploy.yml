@@ -227,46 +227,46 @@ jobs:
         EOF
 
     - name: Safely Create MySQL Database and User
-        env:
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          INSTANCE_PUBLIC_IP: ${{ env.EC2_PUBLIC_IP }}
-          RDS_ENDPOINT: ${{ env.RDS_ENDPOINT }}
-          DB_ROOT_USERNAME: ${{ secrets.DB_ROOT_USERNAME }}
-          DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        run: |
-          ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF
-            set -e
-            mysql -h $RDS_ENDPOINT -P 3306 -u $DB_ROOT_USERNAME -p$DB_ROOT_PASSWORD <<SQL_EOF
-              -- 데이터베이스 존재 여부 확인 및 생성
-              CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+      env:
+        SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        INSTANCE_PUBLIC_IP: ${{ env.EC2_PUBLIC_IP }}
+        RDS_ENDPOINT: ${{ env.RDS_ENDPOINT }}
+        DB_ROOT_USERNAME: ${{ secrets.DB_ROOT_USERNAME }}
+        DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      run: |
+        ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF
+          set -e
+          mysql -h $RDS_ENDPOINT -P 3306 -u $DB_ROOT_USERNAME -p$DB_ROOT_PASSWORD <<SQL_EOF
+            -- 데이터베이스 존재 여부 확인 및 생성
+            CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-              -- 사용자 존재 여부 확인
-              SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER') INTO @userExists;
+            -- 사용자 존재 여부 확인
+            SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER') INTO @userExists;
 
-              -- 사용자가 존재하지 않으면 생성
-              SET @sql = IF(@userExists = 0,
-                CONCAT("CREATE USER '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD'"),
-                'SELECT "User already exists"'
-              );
-              PREPARE stmt FROM @sql;
-              EXECUTE stmt;
-              DEALLOCATE PREPARE stmt;
+            -- 사용자가 존재하지 않으면 생성
+            SET @sql = IF(@userExists = 0,
+              CONCAT("CREATE USER '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD'"),
+              'SELECT "User already exists"'
+            );
+            PREPARE stmt FROM @sql;
+            EXECUTE stmt;
+            DEALLOCATE PREPARE stmt;
 
-              -- 권한 부여 (이미 권한이 있어도 오류 발생하지 않음)
-              GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';
-              FLUSH PRIVILEGES;
+            -- 권한 부여 (이미 권한이 있어도 오류 발생하지 않음)
+            GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';
+            FLUSH PRIVILEGES;
 
-              -- 결과 확인
-              SHOW GRANTS FOR '$DB_USER'@'%';
-            SQL_EOF
-            if [ $? -ne 0 ]; then
-              echo "Error: MySQL commands failed"
-              exit 1
-            fi
-          EOF
+            -- 결과 확인
+            SHOW GRANTS FOR '$DB_USER'@'%';
+          SQL_EOF
+          if [ $? -ne 0 ]; then
+            echo "Error: MySQL commands failed"
+            exit 1
+          fi
+        EOF
 
     - name: Run Database Migrations
       env:
