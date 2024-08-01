@@ -256,12 +256,12 @@ jobs:
 
             -- 결과 확인
             SHOW GRANTS FOR '$DB_USER'@'%';
-    SQL_EOF
-          if [ $? -ne 0 ]; then
-            echo "Error: MySQL commands failed"
-            exit 1
-          fi
-        EOF
+      SQL_EOF
+        if [ $? -ne 0 ]; then
+          echo "Error: MySQL commands failed"
+          exit 1
+        fi
+      EOF
 
     - name: Run Database Migrations
       env:
