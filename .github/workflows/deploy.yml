@@ -94,7 +94,6 @@ jobs:
   
     - name: Create .env file
       run: |
-        set -e
         touch .env
         echo "Touched .env file" >> debug.log
         echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
@@ -153,7 +152,6 @@ jobs:
         fi
         
         ssh -v $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF 2>&1
-          set -ex
           echo "Successfully connected to the instance"
           sudo apt-get update
           sudo apt-get install -y ca-certificates curl unzip
