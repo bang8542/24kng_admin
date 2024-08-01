@@ -180,26 +180,6 @@ jobs:
           echo "MySQL client installed"
         EOF
 
-    - name: Create MySQL Database and User
-      env:
-        SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-        INSTANCE_PUBLIC_IP: ${{ env.EC2_PUBLIC_IP }}
-        RDS_ENDPOINT: ${{ env.RDS_ENDPOINT }}
-        DB_ROOT_USERNAME: ${{ secrets.DB_ROOT_USERNAME }}
-        DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
-        DB_NAME: ${{ secrets.DB_NAME }}
-        DB_USER: ${{ secrets.DB_USER }}
-        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      run: |
-        ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF
-          mysql -h $RDS_ENDPOINT -P 3306 -u $DB_ROOT_USERNAME -p$DB_ROOT_PASSWORD <<SQL
-          CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-          CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';
-          GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';
-          FLUSH PRIVILEGES;
-          SQL
-        EOF
-
     - name: Deploy to EC2
       env:
         SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -236,18 +216,56 @@ jobs:
           else
             echo ".env file not found."
           fi
-          # 데이터베이스 백업
+          
+          sudo docker compose down
+          sudo docker compose up -d --build
+        EOF
+
+    - name: Create MySQL Database and User
+      env:
+        SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        INSTANCE_PUBLIC_IP: ${{ env.EC2_PUBLIC_IP }}
+        RDS_ENDPOINT: ${{ env.RDS_ENDPOINT }}
+        DB_ROOT_USERNAME: ${{ secrets.DB_ROOT_USERNAME }}
+        DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      run: |
+        ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF
+          mysql -h $RDS_ENDPOINT -P 3306 -u $DB_ROOT_USERNAME -p$DB_ROOT_PASSWORD <<SQL
+          CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+          CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';
+          GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';
+          FLUSH PRIVILEGES;
+          SQL
+        EOF
+
+    - name: Run Database Migrations
+      env:
+        SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        INSTANCE_PUBLIC_IP: ${{ env.EC2_PUBLIC_IP }}
+      run: |
+        ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF
+          cd ~/app
+          echo "Running database migrations"
+          sudo docker compose exec -T web python manage.py makemigrations
+          sudo docker compose exec -T web python manage.py migrate
+        EOF
+
+    - name: Backup Database
+      env:
+        SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        INSTANCE_PUBLIC_IP: ${{ env.EC2_PUBLIC_IP }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      run: |
+        ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF
+          cd ~/app
           TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
           BACKUP_FILE="db_backup_\${TIMESTAMP}.sql"
           echo "Creating database backup: \${BACKUP_FILE}"
           sudo docker compose exec -T db mysqldump -u\${DB_USER} -p\${DB_PASSWORD} \${DB_NAME} > \${BACKUP_FILE}
-          
-          sudo docker compose down
-          sudo docker compose up -d --build
-
-          # 마이그레이션 수행
-          echo "Running database migrations"
-          sudo docker compose exec -T web python manage.py makemigrations
-          sudo docker compose exec -T web python manage.py migrate
-        
+          echo "Database backup completed"
         EOF
