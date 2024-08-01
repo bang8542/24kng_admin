@@ -232,9 +232,9 @@ jobs:
         DB_USER: ${{ secrets.DB_USER }}
         DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       run: |
-        ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP << 'ENDSSH'
+        ssh $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF
           set -e
-          mysql -h $RDS_ENDPOINT -P 3306 -u $DB_ROOT_USERNAME -p$DB_ROOT_PASSWORD << 'ENDSQL'
+          mysql -h $RDS_ENDPOINT -P 3306 -u $DB_ROOT_USERNAME -p$DB_ROOT_PASSWORD <<SQL_EOF
             -- 데이터베이스 존재 여부 확인 및 생성
             CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -243,8 +243,8 @@ jobs:
 
             -- 사용자가 존재하지 않으면 생성
             SET @sql = IF(@userExists = 0,
-              CONCAT("CREATE USER '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD'"),
-              'SELECT "User already exists"'
+              CONCAT("CREATE USER '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';"),
+              'SELECT "User already exists";'
             );
             PREPARE stmt FROM @sql;
             EXECUTE stmt;
@@ -256,12 +256,13 @@ jobs:
 
             -- 결과 확인
             SHOW GRANTS FOR '$DB_USER'@'%';
-        ENDSQL
+          SQL_EOF
+          
           if [ $? -ne 0 ]; then
             echo "Error: MySQL commands failed"
             exit 1
           fi
-        ENDSSH
+        EOF
 
     - name: Run Database Migrations
       env:
