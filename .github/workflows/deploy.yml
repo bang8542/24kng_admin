@@ -106,14 +106,14 @@ jobs:
         echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
         echo "DB_USER=${{ secrets.DB_USER }}" >> .env
         echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
-        echo "EKS_DASHBOARD_URL=${{ secrets.EKS_DASHBOARD_URL }}" >> .env
+        echo "EKS_DASHBOARD_URL=http://${{ secrets.EKS_DASHBOARD_URL }}" >> .env
         echo "RDS_ENDPOINT=${{ env.RDS_ENDPOINT }}" >> .env
         cat .env
         cat debug.log
         ls -al
         echo "Finished creating .env file"
 
-    - name: Install Docker and AWS CLI on EC2
+    - name: Install Docker, AWS CLI, kubectl on EC2 and retrieve Grafana URL
       env:
         SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
@@ -121,8 +121,11 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_S3_REGION_NAME: ${{ secrets.AWS_S3_REGION_NAME }}
+        KUBERNETES_CLUSTER_NAME: ${{ secrets.KUBERNETES_CLUSTER_NAME }}
+        GRAFANA_NAMESPACE: ${{ secrets.GRAFANA_NAMESPACE }}
+        GRAFANA_SERVICE_NAME: ${{ secrets.GRAFANA_SERVICE_NAME }}
       run: |
-        set -x
+        set -e
         if [ -z "$INSTANCE_PUBLIC_IP" ]; then
           echo "Error: INSTANCE_PUBLIC_IP is empty"
           exit 1
@@ -136,7 +139,7 @@ jobs:
         max_retries=5
         retry_count=0
         while [ $retry_count -lt $max_retries ]; do
-          if ssh-keyscan -v -H "$INSTANCE_PUBLIC_IP" >> ~/.ssh/known_hosts 2>&1; then
+          if ssh-keyscan -H "$INSTANCE_PUBLIC_IP" >> ~/.ssh/known_hosts 2>&1; then
             echo "ssh-keyscan successful"
             break
           else
@@ -151,33 +154,55 @@ jobs:
           exit 1
         fi
         
-        ssh -v $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF 2>&1
+        ssh -o StrictHostKeyChecking=accept-new $SSH_USERNAME@$INSTANCE_PUBLIC_IP <<EOF
+          set -e
           echo "Successfully connected to the instance"
+          
+          # Basic package installation
           sudo apt-get update
           sudo apt-get install -y ca-certificates curl unzip
-          echo "Basic packages installed"
+
+          # Docker installation
           sudo install -m 0755 -d /etc/apt/keyrings
           sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
           sudo chmod a+r /etc/apt/keyrings/docker.asc
-          echo \
-            "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-            \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | \
-            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
           sudo apt-get update
           sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
           echo "Docker installed"
+
+          # AWS CLI installation
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip awscliv2.zip
           sudo ./aws/install
           echo "AWS CLI installed"
+          
+          # AWS CLI configuration
           aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
           aws configure set region $AWS_S3_REGION_NAME
           echo "AWS CLI configured"
-          echo "Installation and configuration completed successfully"
-          sudo apt-get update
+
+          # MySQL client installation
           sudo apt-get install -y mysql-client
           echo "MySQL client installed"
+
+          # kubectl installation
+          curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          echo "kubectl installed"
+
+          # Update kubeconfig for EKS cluster
+          aws eks --region $AWS_S3_REGION_NAME update-kubeconfig --name $KUBERNETES_CLUSTER_NAME
+
+          # Retrieve Grafana Load Balancer URL
+          GRAFANA_URL=\$(kubectl get svc -n $GRAFANA_NAMESPACE $GRAFANA_SERVICE_NAME -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          export EKS_DASHBOARD_URL="http://\${GRAFANA_URL}"
+          echo "EKS_DASHBOARD_URL=\${EKS_DASHBOARD_URL}" >> /etc/environment
+          echo "Grafana URL retrieved and saved: \${EKS_DASHBOARD_URL}"
+
+          echo "Installation and configuration completed successfully"
         EOF
 
     - name: Deploy to EC2
