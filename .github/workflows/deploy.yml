@@ -158,25 +158,53 @@ jobs:
           set -e
           echo "Successfully connected to the instance"
           
-          # Basic package installation
+          # Update package list
           sudo apt-get update
-          sudo apt-get install -y ca-certificates curl unzip
+
+          # Install basic packages if not already installed
+          for pkg in ca-certificates curl unzip; do
+            if ! dpkg -s \$pkg >/dev/null 2>&1; then
+              sudo apt-get install -y \$pkg
+              echo "\$pkg installed"
+            else
+              echo "\$pkg is already installed"
+            fi
+          done
 
           # Docker installation
-          sudo install -m 0755 -d /etc/apt/keyrings
-          sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-          sudo chmod a+r /etc/apt/keyrings/docker.asc
-          echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-          sudo usermod -aG docker $USER
-          echo "Docker installed"
+          if ! command -v docker &> /dev/null; then
+            sudo install -m 0755 -d /etc/apt/keyrings
+            sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+            sudo chmod a+r /etc/apt/keyrings/docker.asc
+            echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            echo "Docker installed"
+          else
+            echo "Docker is already installed"
+          fi
+
+          # Add current user to docker group
+          if getent group docker > /dev/null 2>&1; then
+            if ! groups \$USER | grep &>/dev/null '\bdocker\b'; then
+              sudo usermod -aG docker \$USER
+              echo "Current user added to docker group"
+            else
+              echo "Current user is already in docker group"
+            fi
+          else
+            echo "Docker group does not exist. Skipping user addition to group."
+          fi
 
           # AWS CLI installation
-          sudo curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          sudo unzip awscliv2.zip
-          sudo ./aws/install
-          echo "AWS CLI installed"
+          if ! command -v aws &> /dev/null; then
+            sudo curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            sudo unzip awscliv2.zip
+            sudo ./aws/install
+            echo "AWS CLI installed"
+          else
+            echo "AWS CLI is already installed"
+          fi
           
           # AWS CLI configuration
           aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
@@ -185,14 +213,22 @@ jobs:
           echo "AWS CLI configured"
 
           # MySQL client installation
-          sudo apt-get install -y mysql-client
-          echo "MySQL client installed"
+          if ! command -v mysql &> /dev/null; then
+            sudo apt-get install -y mysql-client
+            echo "MySQL client installed"
+          else
+            echo "MySQL client is already installed"
+          fi
 
           # kubectl installation
-          sudo curl -LO "https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          sudo chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
-          echo "kubectl installed"
+          if ! command -v kubectl &> /dev/null; then
+            sudo curl -LO "https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo chmod +x kubectl
+            sudo mv kubectl /usr/local/bin/
+            echo "kubectl installed"
+          else
+            echo "kubectl is already installed"
+          fi
 
           # Update kubeconfig for EKS cluster
           aws eks --region $AWS_S3_REGION_NAME update-kubeconfig --name $KUBERNETES_CLUSTER_NAME
