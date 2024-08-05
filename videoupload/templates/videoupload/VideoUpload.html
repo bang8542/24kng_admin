@@ -336,6 +336,7 @@
             xhr.onload = function() {
                 if (xhr.status === 200) {
                     alert('Upload complete!');
+                    window.location.reload();
                 } else {
                     alert('Upload failed. Please try again.');
                 }
