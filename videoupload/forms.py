@@ -5,7 +5,7 @@ from .models import Video
 class VideoForm(forms.ModelForm):
     category = forms.ChoiceField(
         choices=[
-            ('animation', '애니메이션'),
+            ('video', '동영상'),
             ('movie', '영화'),
             ('custom', '직접입력')
         ],
