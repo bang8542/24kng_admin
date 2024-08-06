@@ -28,7 +28,7 @@ services:
   nginx:
     build: ./nginx
     ports:
-      - "8888:80"
+      - "80:80"
     depends_on:
       - web
     volumes:
